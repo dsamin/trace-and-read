@@ -41,15 +41,16 @@ jobs:
       - name: Pick an available iPad simulator
         id: sim
         run: |
-          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys
-d=json.load(sys.stdin)['devices']
-cands=[dev for runtime,devs in d.items() if 'iOS' in runtime for dev in devs if 'iPad' in dev['name'] and dev.get('isAvailable')]
-cands.sort(key=lambda x: x['name'])
-print(cands[0]['udid'] if cands else '')")
+          xcrun simctl list devices available
+          UDID=$(xcrun simctl list devices available \
+            | grep -iE 'ipad' \
+            | grep -oiE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' \
+            | head -1)
+          if [ -z "$UDID" ]; then
+            echo "No iPad simulator available"; xcrun simctl list devices available; exit 1
+          fi
           echo "Chosen iPad simulator UDID: $UDID"
-          if [ -z "$UDID" ]; then echo "No iPad simulator available"; xcrun simctl list devices available; exit 1; fi
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
-          xcrun simctl list devices available | grep -i ipad || true
 
       - name: Build & run unit tests (compiles the whole app)
         run: |
@@ -63,7 +64,10 @@ print(cands[0]['udid'] if cands else '')")
             -resultBundlePath build/TestResults.xcresult \
             clean test 2>&1 | tee build/xcodebuild.log
           rc=$?
-          if [ $rc -ne 0 ]; then echo '--- error lines ---'; grep -nE 'error:|warning: .*deprecated|FAILED|Testing failed' build/xcodebuild.log | tail -80; fi
+          if [ $rc -ne 0 ]; then
+            echo '--- error lines ---'
+            grep -nE 'error:|FAILED|Testing failed' build/xcodebuild.log | tail -80 || true
+          fi
           exit $rc
 
       - name: Boot simulator, launch in autopilot & verify the full loop
@@ -88,11 +92,11 @@ print(cands[0]['udid'] if cands else '')")
           xcrun simctl io "$UDID" screenshot artifacts/loop.png || true
 
           if grep -q "AUTOPILOT LOOP_COMPLETE" artifacts/console.log; then
-            echo "✅ Full core loop ran in the iPad simulator (reached write-then-read bridge)."
+            echo "Full core loop ran in the iPad simulator (reached write-then-read bridge)."
           elif grep -q "AUTOPILOT BRIDGE_REACHED" artifacts/console.log; then
-            echo "✅ Loop reached the write-then-read bridge in the simulator."
+            echo "Loop reached the write-then-read bridge in the simulator."
           else
-            echo "❌ Did not observe the loop completing in the simulator."
+            echo "Did not observe the loop completing in the simulator."
             exit 1
           fi
 
