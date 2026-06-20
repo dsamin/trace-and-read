@@ -103,8 +103,10 @@ jobs:
           APP=$(find build/Build/Products -name 'TraceAndRead.app' -maxdepth 3 | head -1)
           echo "App bundle: $APP"
           test -n "$APP"
-          echo "===== built app Info.plist (CFBundleVersion) ====="
-          plutil -p "$APP/Info.plist" | grep -i CFBundleVersion || echo "(missing!)"
+          echo "===== built app Info.plist key reads (installd-style) ====="
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" || echo "(no CFBundleIdentifier!)"
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" || echo "(no CFBundleVersion!)"
+          file "$APP/Info.plist"
           echo "===== codesign status ====="
           codesign -dvvv "$APP" 2>&1 | head -15 || echo "NOT SIGNED"
           echo "===== bundle contents ====="
