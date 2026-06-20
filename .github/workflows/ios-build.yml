@@ -80,6 +80,7 @@ jobs:
             -destination "id=${{ steps.sim.outputs.udid }}" \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO \
+            ENABLE_DEBUG_DYLIB=NO ENABLE_PREVIEWS=NO \
             clean build 2>&1 | tee build/xcodebuild.log
           rc=$?
           if [ $rc -ne 0 ]; then
