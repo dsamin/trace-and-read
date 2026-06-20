@@ -43,6 +43,13 @@ jobs:
           xcodegen generate
           ls -la
           xcodebuild -list -project TraceAndRead.xcodeproj
+          echo "=== Info.plist-related build settings ==="
+          xcodebuild -showBuildSettings -project TraceAndRead.xcodeproj -scheme TraceAndRead 2>/dev/null \
+            | grep -iE 'INFOPLIST_FILE|GENERATE_INFOPLIST|PRODUCT_BUNDLE_IDENTIFIER|CURRENT_PROJECT_VERSION|MARKETING_VERSION' || true
+          echo "=== App/ and Config/ contents ==="
+          ls -la App Config || true
+          echo "=== Config/Info.plist ==="
+          cat Config/Info.plist || true
 
       - name: Pick an available iPad simulator
         id: sim
@@ -90,6 +97,9 @@ jobs:
           APP=$(find build/Build/Products -name 'TraceAndRead.app' -maxdepth 3 | head -1)
           echo "App bundle: $APP"
           test -n "$APP"
+          echo "===== built app Info.plist ====="
+          plutil -p "$APP/Info.plist" || cat "$APP/Info.plist" || echo "(no Info.plist in bundle!)"
+          echo "================================"
           xcrun simctl install "$UDID" "$APP"
 
           # Launch with the autopilot driver, streaming the app console so we can
