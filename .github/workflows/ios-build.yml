@@ -79,6 +79,7 @@ jobs:
             -scheme TraceAndRead \
             -destination "id=${{ steps.sim.outputs.udid }}" \
             -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO \
             clean build 2>&1 | tee build/xcodebuild.log
           rc=$?
           if [ $rc -ne 0 ]; then
@@ -97,10 +98,22 @@ jobs:
           APP=$(find build/Build/Products -name 'TraceAndRead.app' -maxdepth 3 | head -1)
           echo "App bundle: $APP"
           test -n "$APP"
-          echo "===== built app Info.plist ====="
-          plutil -p "$APP/Info.plist" || cat "$APP/Info.plist" || echo "(no Info.plist in bundle!)"
+          echo "===== built app Info.plist (CFBundleVersion) ====="
+          plutil -p "$APP/Info.plist" | grep -i CFBundleVersion || echo "(missing!)"
+          echo "===== codesign status ====="
+          codesign -dvvv "$APP" 2>&1 | head -15 || echo "NOT SIGNED"
+          echo "===== bundle contents ====="
+          ls -la "$APP"
           echo "================================"
-          xcrun simctl install "$UDID" "$APP"
+          # simctl install is occasionally flaky right after a fresh boot; retry.
+          install_ok=""
+          for attempt in 1 2 3; do
+            if xcrun simctl install "$UDID" "$APP"; then install_ok=1; break; fi
+            echo "install attempt $attempt failed; re-checking device…"
+            xcrun simctl bootstatus "$UDID" -b || true
+            sleep 5
+          done
+          test -n "$install_ok"
 
           # Launch with the autopilot driver, streaming the app console so we can
           # confirm the whole loop ran: START -> per-letter TRACE -> BRIDGE_REACHED
