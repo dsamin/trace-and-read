@@ -12,7 +12,18 @@
 //
 
 import Foundation
-import CoreGraphics
+#if canImport(CoreGraphics)
+import CoreGraphics   // On Apple platforms; on Linux CGPoint/CGFloat come from Foundation.
+#endif
+
+/// A heading as a unit vector. A tiny portable stand-in for CGVector, which is
+/// not available in swift-corelibs-foundation — keeping the chassis math pure
+/// Foundation so it builds and is testable on any platform.
+public struct Heading: Sendable, Equatable {
+    public let dx: CGFloat
+    public let dy: CGFloat
+    public init(dx: CGFloat, dy: CGFloat) { self.dx = dx; self.dy = dy }
+}
 
 /// The Handwriting-Without-Tears motor families. Letters are grouped by the
 /// motion the hand makes, not alphabetically — this is the reversal-prevention
@@ -59,15 +70,18 @@ public struct Stroke: Codable, Sendable, Identifiable {
 /// the direction of each, plus the *sound* it makes (not its name).
 public struct LetterForm: Codable, Sendable, Identifiable {
     public let id: String          // the character as a string, e.g. "a"
-    public let character: Character
     public let family: StrokeFamily
     public let strokes: [Stroke]
     /// The phoneme, spoken as a sound: "sss", not "ess".
     public let sound: String
 
+    /// The letter itself. Derived from `id` so the stored state stays fully
+    /// Codable (Character is not Codable), which lets the content library be
+    /// serialized to/from a bundled pack later.
+    public var character: Character { id.first ?? " " }
+
     public init(character: Character, family: StrokeFamily, sound: String, strokes: [Stroke]) {
         self.id = String(character)
-        self.character = character
         self.family = family
         self.sound = sound
         self.strokes = strokes
@@ -174,15 +188,15 @@ public enum StrokeMath {
     }
 
     /// Initial heading of a stroke as a unit vector — drives the demo arrow.
-    public static func initialDirection(of points: [CGPoint]) -> CGVector {
-        guard points.count > 1 else { return CGVector(dx: 0, dy: 1) }
+    public static func initialDirection(of points: [CGPoint]) -> Heading {
+        guard points.count > 1 else { return Heading(dx: 0, dy: 1) }
         // Look a little way down the stroke so the arrow ignores tiny jitter.
         let target = StrokeMath.point(at: 0.12, along: points)
         let dx = target.x - points[0].x
         let dy = target.y - points[0].y
         let mag = hypot(dx, dy)
-        guard mag > .ulpOfOne else { return CGVector(dx: 0, dy: 1) }
-        return CGVector(dx: dx / mag, dy: dy / mag)
+        guard mag > .ulpOfOne else { return Heading(dx: 0, dy: 1) }
+        return Heading(dx: dx / mag, dy: dy / mag)
     }
 }
 

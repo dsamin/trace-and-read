@@ -141,7 +141,7 @@ struct StrokeCanvasView: View {
         ctx.fill(inner, with: .color(Theme.ink.opacity(0.55)))
     }
 
-    private func drawArrow(in ctx: GraphicsContext, at origin: CGPoint, direction: CGVector, length: CGFloat) {
+    private func drawArrow(in ctx: GraphicsContext, at origin: CGPoint, direction: Heading, length: CGFloat) {
         let tip = CGPoint(x: origin.x + direction.dx * length, y: origin.y + direction.dy * length)
         var shaft = Path()
         shaft.move(to: origin)

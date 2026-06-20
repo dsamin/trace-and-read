@@ -15,7 +15,9 @@
 //
 
 import Foundation
-import CoreGraphics
+#if canImport(CoreGraphics)
+import CoreGraphics   // On Apple platforms; on Linux CGPoint/CGFloat come from Foundation.
+#endif
 
 /// Every tunable knob in one place. Distances are in unit-square units
 /// (the canvas maps the unit square onto a centered square region).
@@ -52,9 +54,13 @@ public struct StrokeTolerance: Sendable {
     )
 
     /// Strict — a well-mastered letter. Still humane, never hostile.
+    /// `meanPathDistance` of 0.07 means a mastered trace must keep its *average*
+    /// deviation under 7% of the box; this catches a sustained mid-stroke
+    /// wobble (e.g. a 0.13 sideways drift, whose mean is ~0.083) while still
+    /// passing a faithful trace with normal fingertip jitter.
     public static let strict = StrokeTolerance(
-        startRadius: 0.12, endRadius: 0.12, meanPathDistance: 0.085,
-        maxPathDistance: 0.17, coverage: 0.82, minLengthRatio: 0.70
+        startRadius: 0.12, endRadius: 0.12, meanPathDistance: 0.07,
+        maxPathDistance: 0.16, coverage: 0.82, minLengthRatio: 0.70
     )
 
     /// Interpolate generous→strict by mastery (0 = new, 1 = mastered).

@@ -15,7 +15,9 @@
 //
 
 import Foundation
-import CoreGraphics
+#if canImport(CoreGraphics)
+import CoreGraphics   // On Apple platforms; on Linux CGPoint/CGFloat come from Foundation.
+#endif
 
 public enum LetterLibrary {
 

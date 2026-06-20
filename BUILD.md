@@ -75,6 +75,25 @@ Drive it by hand and confirm the acceptance criteria in `README.md`:
 6. The **"just trace"** button (scribble icon) is always one tap away.
 7. The **parent gate** (gear, top-right): press, hold, then drag to open settings.
 
+## Verifying the core on Linux / CI (no Mac needed)
+
+The make-or-break stroke validator and the content data are pure Foundation,
+so they build, test, and run on any platform via the `CoreVerification/`
+SwiftPM package — handy for CI and for proving the logic without a Mac:
+
+```sh
+# Install the Swift Linux toolchain (e.g. swift.org tarball for your distro),
+# then:
+cd CoreVerification
+swift test          # 10 tests across the real alphabet — all green
+swift run LoopDemo  # headless end-to-end drive of the core-loop logic
+```
+
+This is how the validator tuning was actually verified (the strict
+`meanPathDistance` was tightened to 0.07 after a test caught it accepting a
+0.13 mid-stroke drift). The SwiftUI/SwiftData/AVFoundation app layer still
+requires macOS + Xcode as above.
+
 ## Dropping in real voice later
 
 `SystemAudioEngine` prefers a bundled recording named after each clip
