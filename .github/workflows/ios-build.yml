@@ -23,6 +23,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Select a modern Xcode (XcodeGen emits a project format 15.4 can't read)
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer \
+            || sudo xcode-select -s /Applications/Xcode_16.1.app/Contents/Developer
+          xcode-select -p
+
       - name: Show toolchain
         run: |
           xcodebuild -version
