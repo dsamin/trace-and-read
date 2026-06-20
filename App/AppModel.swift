@@ -30,6 +30,10 @@ final class AppModel {
     let audio: AudioEngine
     let review: ReviewService
 
+    /// True when launched with `-autopilot` (CI/UI-test): the loop is driven
+    /// by synthetic strokes to demonstrate the full flow without a fingertip.
+    let isAutopilot: Bool
+
     // Navigation.
     private(set) var screen: Screen = .name
     /// The word currently being traced / read.
@@ -38,10 +42,19 @@ final class AppModel {
     /// Where to return after the free-trace detour.
     private var screenBeforeFreeTrace: Screen = .name
 
-    init(audio: AudioEngine, review: ReviewService) {
+    init(audio: AudioEngine, review: ReviewService, isAutopilot: Bool = false) {
         self.audio = audio
         self.review = review
+        self.isAutopilot = isAutopilot
         self.currentWord = WordLibrary.name
+    }
+
+    /// In autopilot, skip the name anchor and head straight into tracing a short
+    /// CVC word so the run reaches the write-then-read bridge quickly.
+    func beginAutopilotIfNeeded() {
+        guard isAutopilot, screen == .name else { return }
+        AutopilotLog.mark("START")
+        if let sun = content.word("sun") { chooseWord(sun) }
     }
 
     // MARK: Flow
@@ -70,6 +83,7 @@ final class AppModel {
 
     /// All letters of `currentWord` were written — fire the read bridge.
     func wordCompleted() {
+        if isAutopilot { AutopilotLog.mark("BRIDGE_REACHED word=\(currentWord.text)") }
         go(.bridge)
     }
 

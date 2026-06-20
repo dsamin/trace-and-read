@@ -38,5 +38,6 @@ struct RootView: View {
             }
         }
         .animation(Theme.softEase, value: app.screen)
+        .onAppear { app.beginAutopilotIfNeeded() }
     }
 }

@@ -87,5 +87,9 @@ struct WriteThenReadScreen: View {
         // 3) Blend aloud and reveal the picture together.
         app.audio.play(.wholeWord(word.spokenLabel))
         withAnimation(Theme.gentleSpring) { revealed = true }
+
+        if app.isAutopilot {
+            AutopilotLog.mark("LOOP_COMPLETE word=\(word.text) picture=\(word.symbolName)")
+        }
     }
 }

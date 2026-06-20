@@ -43,7 +43,10 @@ struct TracingScreen: View {
         .calmBackground()
         .overlay(alignment: .bottomTrailing) { freeTraceButton }
         .overlay(alignment: .topTrailing) { ParentGateButton(app: app) }
-        .onAppear { vm.begin() }
+        .onAppear {
+            vm.begin()
+            if app.isAutopilot { vm.startAutopilot() }
+        }
         .onDisappear { vm.cancel() }
     }
 

@@ -66,23 +66,35 @@ print(cands[0]['udid'] if cands else '')")
           if [ $rc -ne 0 ]; then echo '--- error lines ---'; grep -nE 'error:|warning: .*deprecated|FAILED|Testing failed' build/xcodebuild.log | tail -80; fi
           exit $rc
 
-      - name: Boot simulator, install & launch the app
+      - name: Boot simulator, launch in autopilot & verify the full loop
         run: |
           set -x
           UDID="${{ steps.sim.outputs.udid }}"
+          mkdir -p artifacts
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b
           APP=$(find build/Build/Products -name 'TraceAndRead.app' -maxdepth 3 | head -1)
           echo "App bundle: $APP"
           test -n "$APP"
           xcrun simctl install "$UDID" "$APP"
-          xcrun simctl launch "$UDID" com.devan.traceandread.app
-          sleep 8
-          # Confirm the app is still running (did not crash on launch).
-          xcrun simctl spawn "$UDID" launchctl list | grep -i traceandread || true
-          mkdir -p artifacts
-          xcrun simctl io "$UDID" screenshot artifacts/launch.png
-          echo "Launched and screenshotted."
+
+          # Launch with the autopilot driver, streaming the app console so we can
+          # confirm the whole loop ran: START -> per-letter TRACE -> BRIDGE_REACHED
+          # -> LOOP_COMPLETE. Time-boxed so a hang can't wedge the job.
+          ( timeout 120 xcrun simctl launch --console-pty "$UDID" com.devan.traceandread.app -autopilot \
+              > artifacts/console.log 2>&1 ) || true
+
+          echo "===== app console ====="; cat artifacts/console.log || true; echo "======================="
+          xcrun simctl io "$UDID" screenshot artifacts/loop.png || true
+
+          if grep -q "AUTOPILOT LOOP_COMPLETE" artifacts/console.log; then
+            echo "✅ Full core loop ran in the iPad simulator (reached write-then-read bridge)."
+          elif grep -q "AUTOPILOT BRIDGE_REACHED" artifacts/console.log; then
+            echo "✅ Loop reached the write-then-read bridge in the simulator."
+          else
+            echo "❌ Did not observe the loop completing in the simulator."
+            exit 1
+          fi
 
       - name: Upload screenshot & logs
         if: always()

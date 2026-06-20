@@ -104,7 +104,38 @@ final class TracingViewModel {
 
     func cancel() {
         demoTask?.cancel()
+        autopilotTask?.cancel()
         stallToken += 1
+    }
+
+    // MARK: Autopilot (CI / UI-test only)
+
+    private var autopilotTask: Task<Void, Never>?
+
+    /// Drive the word to completion with faithful synthetic strokes, honoring
+    /// the real 3-step fade and the real validator. Used by the `-autopilot`
+    /// launch to demonstrate the whole loop in the simulator.
+    func startAutopilot() {
+        autopilotTask?.cancel()
+        autopilotTask = Task { [weak self] in
+            guard let self else { return }
+            var safety = 0
+            while self.phase != .wordComplete && safety < 400 {
+                safety += 1
+                switch self.phase {
+                case .guidedTrace, .freeWrite:
+                    if let stroke = self.currentStroke {
+                        AutopilotLog.mark("TRACE letter=\(self.currentForm?.character ?? " ") stroke=\(self.strokeIndex) phase=\(self.phase)")
+                        self.submitStroke(StrokeMath.resample(stroke.points, count: 40))
+                    }
+                    try? await Task.sleep(for: .milliseconds(300))
+                case .demo, .letterComplete:
+                    try? await Task.sleep(for: .milliseconds(150))
+                case .wordComplete:
+                    break
+                }
+            }
+        }
     }
 
     // MARK: Per-letter

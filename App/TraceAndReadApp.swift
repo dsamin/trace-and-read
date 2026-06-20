@@ -28,7 +28,10 @@ struct TraceAndReadApp: App {
         }
         let review = ReviewService(context: container.mainContext)
         let audio = SystemAudioEngine()
-        _app = State(initialValue: AppModel(audio: audio, review: review))
+        // CI / UI-test hook: `-autopilot` drives the real loop with synthetic
+        // strokes so the simulator run can prove the whole flow end to end.
+        let autopilot = ProcessInfo.processInfo.arguments.contains("-autopilot")
+        _app = State(initialValue: AppModel(audio: audio, review: review, isAutopilot: autopilot))
     }
 
     var body: some Scene {
