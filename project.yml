@@ -37,13 +37,21 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.devan.traceandread.app
-        # Use a committed, explicit Info.plist (Config/Info.plist) referenced
-        # directly. XcodeGen's generated plist omitted CFBundleVersion, which
-        # broke simctl install; this removes all reliance on plist synthesis.
-        GENERATE_INFOPLIST_FILE: "NO"
-        INFOPLIST_FILE: Config/Info.plist
+        # Let Xcode synthesize Info.plist from build settings (the standard
+        # path). A custom INFOPLIST_FILE broke the bundle-id -> code-signature
+        # flow: the app got ad-hoc signed with a fallback identifier
+        # (TraceAndRead-<uuid>) instead of the bundle id, so installd reported
+        # "Missing bundle ID". GENERATE_INFOPLIST_FILE keeps PRODUCT_BUNDLE_
+        # IDENTIFIER coherent across the plist and the signature.
+        GENERATE_INFOPLIST_FILE: "YES"
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
+        # Calm full-screen, landscape-locked, iPad-only (synthesized into plist).
+        INFOPLIST_KEY_UIRequiresFullScreen: "YES"
+        INFOPLIST_KEY_UIStatusBarHidden: "YES"
+        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations__ipad: "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: "YES"
 
   TraceAndReadTests:
     type: bundle.unit-test
