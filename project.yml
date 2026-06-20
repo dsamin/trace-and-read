@@ -12,10 +12,13 @@ settings:
     SWIFT_VERSION: "5.9"
     # iPad-only.
     TARGETED_DEVICE_FAMILY: "2"
-    # No signing needed to build/run in the simulator.
+    # Do NOT disable code signing: simulator apps must still be ad-hoc signed
+    # (identity "-", no team required). With signing disabled the .app is
+    # unsigned and `simctl install` rejects it with a MISLEADING
+    # "does not contain a valid CFBundleVersion" error. Let the simulator SDK
+    # apply its default ad-hoc signature.
+    CODE_SIGN_IDENTITY: "-"
     CODE_SIGNING_REQUIRED: "NO"
-    CODE_SIGN_IDENTITY: ""
-    CODE_SIGNING_ALLOWED: "NO"
 
 targets:
   TraceAndRead:
