@@ -1,0 +1,95 @@
+name: iOS build & simulator launch
+
+# Builds Trace & Read on a GitHub-hosted macOS runner (which has Xcode + the
+# iPad Simulator), runs the unit tests, then boots an iPad simulator and
+# launches the app to prove it runs — the macOS-only steps that cannot happen
+# in the Linux dev environment.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/repo-familiarization-khbtnh
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-launch:
+    runs-on: macos-14
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          echo "Available Xcodes:"; ls /Applications | grep -i xcode || true
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: |
+          xcodegen generate
+          ls -la
+          xcodebuild -list -project TraceAndRead.xcodeproj
+
+      - name: Pick an available iPad simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys
+d=json.load(sys.stdin)['devices']
+cands=[dev for runtime,devs in d.items() if 'iOS' in runtime for dev in devs if 'iPad' in dev['name'] and dev.get('isAvailable')]
+cands.sort(key=lambda x: x['name'])
+print(cands[0]['udid'] if cands else '')")
+          echo "Chosen iPad simulator UDID: $UDID"
+          if [ -z "$UDID" ]; then echo "No iPad simulator available"; xcrun simctl list devices available; exit 1; fi
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl list devices available | grep -i ipad || true
+
+      - name: Build & run unit tests (compiles the whole app)
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild \
+            -project TraceAndRead.xcodeproj \
+            -scheme TraceAndRead \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build \
+            -resultBundlePath build/TestResults.xcresult \
+            clean test 2>&1 | tee build/xcodebuild.log
+          rc=$?
+          if [ $rc -ne 0 ]; then echo '--- error lines ---'; grep -nE 'error:|warning: .*deprecated|FAILED|Testing failed' build/xcodebuild.log | tail -80; fi
+          exit $rc
+
+      - name: Boot simulator, install & launch the app
+        run: |
+          set -x
+          UDID="${{ steps.sim.outputs.udid }}"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          APP=$(find build/Build/Products -name 'TraceAndRead.app' -maxdepth 3 | head -1)
+          echo "App bundle: $APP"
+          test -n "$APP"
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl launch "$UDID" com.devan.traceandread.app
+          sleep 8
+          # Confirm the app is still running (did not crash on launch).
+          xcrun simctl spawn "$UDID" launchctl list | grep -i traceandread || true
+          mkdir -p artifacts
+          xcrun simctl io "$UDID" screenshot artifacts/launch.png
+          echo "Launched and screenshotted."
+
+      - name: Upload screenshot & logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            artifacts/**
+            build/xcodebuild.log
+          if-no-files-found: warn
