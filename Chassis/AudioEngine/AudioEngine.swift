@@ -65,14 +65,11 @@ public final class SystemAudioEngine: NSObject, AudioEngine, AVSpeechSynthesizer
     public func playSequence(_ clips: [AudioClip]) {
         stop()
         guard !clips.isEmpty else { return }
-        // If every clip has a recording we could chain players, but the common
-        // dev path is synthesis: enqueue utterances, which the synthesizer
-        // plays in order, inserting each clip's pause as post-utterance delay.
+        // Enqueue utterances; the synthesizer plays them in order, inserting
+        // each clip's pause as a post-utterance delay. (Recordings, when added
+        // later, are handled by `play`; sequences stay synthesis-driven during
+        // development so ordering is simple and deterministic.)
         for clip in clips {
-            if hasRecording(named: clip.name) {
-                // Fall back to synthesis for mixed sequences to keep ordering
-                // simple and deterministic during development.
-            }
             enqueueSpeech(clip.spokenText, pauseAfter: clip.trailingPause)
         }
     }
@@ -84,10 +81,6 @@ public final class SystemAudioEngine: NSObject, AudioEngine, AVSpeechSynthesizer
     }
 
     // MARK: Recording backend
-
-    private func hasRecording(named name: String) -> Bool {
-        recordingURL(named: name) != nil
-    }
 
     private func recordingURL(named name: String) -> URL? {
         for ext in ["m4a", "caf", "wav", "aiff"] {
