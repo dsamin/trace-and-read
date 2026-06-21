@@ -61,20 +61,25 @@ jobs:
         id: sim
         run: |
           # Reusing a cached/booted device left simctl install failing to read
-          # the bundle ID from a provably-valid bundle. Create a clean device.
+          # the bundle ID. Create a clean device, choosing an iPad the newest
+          # runtime actually supports (authoritative: runtime.supportedDeviceTypes).
           xcrun simctl shutdown all || true
-          RUNTIME=$(xcrun simctl list runtimes available | grep -oE 'com.apple.CoreSimulator.SimRuntime.iOS-[0-9-]+' | tail -1)
-          # Prefer a modern iPad Pro (compatible with the newest iOS); fall back
-          # to iPad Air, then any iPad. (A blind tail -1 picked iPad mini 4,
-          # which is incompatible with iOS 26.)
-          DEVTYPE=$(xcrun simctl list devicetypes | grep -oE 'com.apple.CoreSimulator.SimDeviceType.iPad-Pro[A-Za-z0-9-]*' | tail -1)
-          [ -z "$DEVTYPE" ] && DEVTYPE=$(xcrun simctl list devicetypes | grep -oE 'com.apple.CoreSimulator.SimDeviceType.iPad-Air[A-Za-z0-9-]*' | tail -1)
-          [ -z "$DEVTYPE" ] && DEVTYPE=$(xcrun simctl list devicetypes | grep -oE 'com.apple.CoreSimulator.SimDeviceType.iPad[A-Za-z0-9-]*' | head -1)
-          echo "Runtime: $RUNTIME"
-          echo "Device type: $DEVTYPE"
-          if [ -z "$RUNTIME" ] || [ -z "$DEVTYPE" ]; then
-            echo "Could not determine runtime/devicetype"; xcrun simctl list runtimes; xcrun simctl list devicetypes; exit 1
-          fi
+          xcrun simctl list -j > /tmp/sim.json
+          python3 -c '
+          import json
+          d = json.load(open("/tmp/sim.json"))
+          rts = [r for r in d["runtimes"] if r.get("isAvailable") and r.get("name","").startswith("iOS")]
+          rts.sort(key=lambda r: [int(x) for x in r["version"].split(".")])
+          rt = rts[-1]
+          ipads = [t for t in rt.get("supportedDeviceTypes", []) if "iPad" in t.get("name","")]
+          pro = [t for t in ipads if "Pro" in t["name"]]
+          choice = (pro or ipads)[-1]
+          open("/tmp/sel.txt","w").write(rt["identifier"] + " " + choice["identifier"] + " " + choice["name"])
+          '
+          RUNTIME=$(cut -d" " -f1 /tmp/sel.txt)
+          DEVTYPE=$(cut -d" " -f2 /tmp/sel.txt)
+          echo "Selected runtime=$RUNTIME devtype=$DEVTYPE ($(cut -d' ' -f3- /tmp/sel.txt))"
+          if [ -z "$RUNTIME" ] || [ -z "$DEVTYPE" ]; then xcrun simctl list runtimes; exit 1; fi
           UDID=$(xcrun simctl create "CI-iPad" "$DEVTYPE" "$RUNTIME")
           echo "Created fresh iPad simulator UDID: $UDID"
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
