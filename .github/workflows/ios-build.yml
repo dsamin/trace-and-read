@@ -55,18 +55,21 @@ jobs:
           echo "=== Config/Info.plist ==="
           cat Config/Info.plist || true
 
-      - name: Pick an available iPad simulator
+      - name: Create a fresh iPad simulator
         id: sim
         run: |
-          xcrun simctl list devices available
-          UDID=$(xcrun simctl list devices available \
-            | grep -iE 'ipad' \
-            | grep -oiE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' \
-            | head -1)
-          if [ -z "$UDID" ]; then
-            echo "No iPad simulator available"; xcrun simctl list devices available; exit 1
+          # Reusing a cached/booted device left simctl install failing to read
+          # the bundle ID from a provably-valid bundle. Create a clean device.
+          xcrun simctl shutdown all || true
+          RUNTIME=$(xcrun simctl list runtimes available | grep -oE 'com.apple.CoreSimulator.SimRuntime.iOS-[0-9-]+' | tail -1)
+          DEVTYPE=$(xcrun simctl list devicetypes | grep -oE 'com.apple.CoreSimulator.SimDeviceType.iPad[A-Za-z0-9-]+' | tail -1)
+          echo "Runtime: $RUNTIME"
+          echo "Device type: $DEVTYPE"
+          if [ -z "$RUNTIME" ] || [ -z "$DEVTYPE" ]; then
+            echo "Could not determine runtime/devicetype"; xcrun simctl list runtimes; xcrun simctl list devicetypes; exit 1
           fi
-          echo "Chosen iPad simulator UDID: $UDID"
+          UDID=$(xcrun simctl create "CI-iPad" "$DEVTYPE" "$RUNTIME")
+          echo "Created fresh iPad simulator UDID: $UDID"
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
 
       - name: Build the whole app for the simulator
