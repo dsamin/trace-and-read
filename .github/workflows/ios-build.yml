@@ -111,6 +111,13 @@ jobs:
           codesign -dvvv "$APP" 2>&1 | head -15 || echo "NOT SIGNED"
           echo "===== bundle contents ====="
           ls -la "$APP"
+          echo "===== re-sign with explicit bundle identifier ====="
+          # The app was ad-hoc signed with codesign's fallback identifier
+          # (TraceAndRead-<uuid>) instead of the bundle id. IXInstaller derives
+          # the bundle ID from the signature and rejects the non-reverse-DNS
+          # fallback as "Missing bundle ID". Re-sign with the real identifier.
+          codesign --force --sign - --identifier com.devan.traceandread.app "$APP"
+          codesign -dvvv "$APP" 2>&1 | grep -E 'Identifier=' || true
           echo "================================"
           # simctl install is occasionally flaky right after a fresh boot; retry.
           install_ok=""
