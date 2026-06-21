@@ -30,10 +30,11 @@ targets:
       - path: Shared
       - path: Chassis
       - path: Features
-      # Folder reference so the Audio/ subdirectory is preserved at runtime,
-      # which is how SystemAudioEngine looks up bundled voice clips.
-      - path: Resources
-        type: folder
+      # NOTE: a `type: folder` Resources reference was removed — it placed a
+      # literal Resources/ directory in the iOS app bundle (a macOS-style deep
+      # layout), which made simctl/IXInstaller fail to read the bundle ID
+      # ("Missing bundle ID"). Real audio clips, when recorded, should be added
+      # as normal bundle resources instead.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.devan.traceandread.app
