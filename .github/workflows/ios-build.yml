@@ -116,6 +116,7 @@ jobs:
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b
           APP=$(find build/Build/Products -name 'TraceAndRead.app' -maxdepth 3 | head -1)
+          APP=$(realpath "$APP")          # absolute path — simctl can misread relative paths
           echo "App bundle: $APP"
           test -n "$APP"
           echo "===== built app Info.plist key reads (installd-style) ====="
