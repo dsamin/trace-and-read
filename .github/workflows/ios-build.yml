@@ -145,21 +145,29 @@ jobs:
           done
           test -n "$install_ok"
 
-          # Launch with the autopilot driver, streaming the app console so we can
-          # confirm the whole loop ran: START -> per-letter TRACE -> BRIDGE_REACHED
-          # -> LOOP_COMPLETE. Time-boxed so a hang can't wedge the job.
-          ( timeout 120 xcrun simctl launch --console-pty "$UDID" com.devan.traceandread.app -autopilot \
-              > artifacts/console.log 2>&1 ) || true
+          # Launch with the autopilot driver, streaming the app console so we
+          # can confirm the whole loop ran: START -> per-letter TRACE ->
+          # BRIDGE_REACHED -> LOOP_COMPLETE. macOS has no GNU `timeout`, so run
+          # the (blocking) console launch in the background and poll the log.
+          xcrun simctl launch --console-pty "$UDID" com.devan.traceandread.app -autopilot \
+              > artifacts/console.log 2>&1 &
+          LAUNCH_PID=$!
+          for i in $(seq 1 75); do
+            grep -q "AUTOPILOT LOOP_COMPLETE" artifacts/console.log && break
+            sleep 2
+          done
+          xcrun simctl io "$UDID" screenshot artifacts/loop.png || true
+          kill "$LAUNCH_PID" 2>/dev/null || true
+          xcrun simctl terminate "$UDID" com.devan.traceandread.app 2>/dev/null || true
 
           echo "===== app console ====="; cat artifacts/console.log || true; echo "======================="
-          xcrun simctl io "$UDID" screenshot artifacts/loop.png || true
 
           if grep -q "AUTOPILOT LOOP_COMPLETE" artifacts/console.log; then
-            echo "Full core loop ran in the iPad simulator (reached write-then-read bridge)."
+            echo "✅ Full core loop ran in the iPad simulator (reached write-then-read bridge)."
           elif grep -q "AUTOPILOT BRIDGE_REACHED" artifacts/console.log; then
-            echo "Loop reached the write-then-read bridge in the simulator."
+            echo "✅ Loop reached the write-then-read bridge in the simulator."
           else
-            echo "Did not observe the loop completing in the simulator."
+            echo "❌ Did not observe the loop completing in the simulator."
             exit 1
           fi
 
