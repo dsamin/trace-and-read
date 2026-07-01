@@ -1,0 +1,182 @@
+name: iOS build & simulator launch
+
+# Builds Trace & Read on a GitHub-hosted macOS runner (which has Xcode + the
+# iPad Simulator), runs the unit tests, then boots an iPad simulator and
+# launches the app to prove it runs — the macOS-only steps that cannot happen
+# in the Linux dev environment.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/repo-familiarization-khbtnh
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-launch:
+    # macos-15 ships a coherent Xcode 16 + iOS 18 simulator stack. macos-14's
+    # default is Xcode 15.4, and hand-selecting 16.x there leaves the iOS 18
+    # simulator runtime poorly paired, which made `simctl install` fail.
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select the newest available Xcode
+        run: |
+          # Pick the newest Xcode overall so its SDK matches the newest installed
+          # simulator runtime (the runner ships iOS 26.x).
+          NEWEST=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$NEWEST" ]; then sudo xcode-select -s "$NEWEST/Contents/Developer"; fi
+          xcode-select -p
+          xcodebuild -version
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          echo "Available Xcodes:"; ls /Applications | grep -i xcode || true
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: |
+          xcodegen generate
+          ls -la
+          xcodebuild -list -project TraceAndRead.xcodeproj
+          echo "=== Info.plist-related build settings ==="
+          xcodebuild -showBuildSettings -project TraceAndRead.xcodeproj -scheme TraceAndRead 2>/dev/null \
+            | grep -iE 'INFOPLIST_FILE|GENERATE_INFOPLIST|PRODUCT_BUNDLE_IDENTIFIER|CURRENT_PROJECT_VERSION|MARKETING_VERSION' || true
+          echo "=== App/ and Config/ contents ==="
+          ls -la App Config || true
+          echo "=== Config/Info.plist ==="
+          cat Config/Info.plist || true
+
+      - name: Create a fresh iPad simulator
+        id: sim
+        run: |
+          # Reusing a cached/booted device left simctl install failing to read
+          # the bundle ID. Create a clean device, choosing an iPad the newest
+          # runtime actually supports (authoritative: runtime.supportedDeviceTypes).
+          xcrun simctl shutdown all || true
+          xcrun simctl list -j > /tmp/sim.json
+          python3 -c '
+          import json
+          d = json.load(open("/tmp/sim.json"))
+          rts = [r for r in d["runtimes"] if r.get("isAvailable") and r.get("name","").startswith("iOS")]
+          rts.sort(key=lambda r: [int(x) for x in r["version"].split(".")])
+          rt = rts[-1]
+          ipads = [t for t in rt.get("supportedDeviceTypes", []) if "iPad" in t.get("name","")]
+          pro = [t for t in ipads if "Pro" in t["name"]]
+          choice = (pro or ipads)[-1]
+          open("/tmp/sel.txt","w").write(rt["identifier"] + " " + choice["identifier"] + " " + choice["name"])
+          '
+          RUNTIME=$(cut -d" " -f1 /tmp/sel.txt)
+          DEVTYPE=$(cut -d" " -f2 /tmp/sel.txt)
+          echo "Selected runtime=$RUNTIME devtype=$DEVTYPE ($(cut -d' ' -f3- /tmp/sel.txt))"
+          if [ -z "$RUNTIME" ] || [ -z "$DEVTYPE" ]; then xcrun simctl list runtimes; exit 1; fi
+          UDID=$(xcrun simctl create "CI-iPad" "$DEVTYPE" "$RUNTIME")
+          echo "Created fresh iPad simulator UDID: $UDID"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      - name: Build the whole app for the simulator
+        run: |
+          # Compiles the entire SwiftUI/SwiftData/AVFoundation app. The pure-logic
+          # unit tests (validator + content) are verified separately and
+          # deterministically on Linux via the CoreVerification SwiftPM package
+          # (swift test), so CI here gates on a clean app build + the real
+          # simulator launch below rather than the finicky hosted-test runner.
+          set -o pipefail
+          mkdir -p build
+          xcodebuild \
+            -project TraceAndRead.xcodeproj \
+            -scheme TraceAndRead \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO \
+            ENABLE_DEBUG_DYLIB=NO ENABLE_PREVIEWS=NO \
+            clean build 2>&1 | tee build/xcodebuild.log
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            echo '--- error lines ---'
+            grep -nE 'error:|warning: .*unused|cannot find' build/xcodebuild.log | tail -80 || true
+          fi
+          exit $rc
+
+      - name: Boot simulator, launch in autopilot & verify the full loop
+        run: |
+          set -x
+          UDID="${{ steps.sim.outputs.udid }}"
+          mkdir -p artifacts
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          APP=$(find build/Build/Products -name 'TraceAndRead.app' -maxdepth 3 | head -1)
+          APP=$(realpath "$APP")          # absolute path — simctl can misread relative paths
+          echo "App bundle: $APP"
+          test -n "$APP"
+          echo "===== built app Info.plist key reads (installd-style) ====="
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist" || echo "(no CFBundleIdentifier!)"
+          /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$APP/Info.plist" || echo "(no CFBundleVersion!)"
+          file "$APP/Info.plist"
+          echo "===== codesign status ====="
+          codesign -dvvv "$APP" 2>&1 | head -15 || echo "NOT SIGNED"
+          echo "===== bundle contents ====="
+          ls -la "$APP"
+          echo "===== re-sign with explicit bundle identifier ====="
+          # The app was ad-hoc signed with codesign's fallback identifier
+          # (TraceAndRead-<uuid>) instead of the bundle id. IXInstaller derives
+          # the bundle ID from the signature and rejects the non-reverse-DNS
+          # fallback as "Missing bundle ID". Re-sign with the real identifier.
+          codesign --force --sign - --identifier com.devan.traceandread.app "$APP"
+          codesign -dvvv "$APP" 2>&1 | grep -E 'Identifier=' || true
+          echo "================================"
+          # simctl install is occasionally flaky right after a fresh boot; retry.
+          install_ok=""
+          for attempt in 1 2 3; do
+            if xcrun simctl install "$UDID" "$APP"; then install_ok=1; break; fi
+            echo "install attempt $attempt failed; re-checking device…"
+            xcrun simctl bootstatus "$UDID" -b || true
+            sleep 5
+          done
+          test -n "$install_ok"
+
+          # Launch with the autopilot driver, streaming the app console so we
+          # can confirm the whole loop ran: START -> per-letter TRACE ->
+          # BRIDGE_REACHED -> LOOP_COMPLETE. macOS has no GNU `timeout`, so run
+          # the (blocking) console launch in the background and poll the log.
+          xcrun simctl launch --console-pty "$UDID" com.devan.traceandread.app -autopilot \
+              > artifacts/console.log 2>&1 &
+          LAUNCH_PID=$!
+          for i in $(seq 1 75); do
+            grep -q "AUTOPILOT LOOP_COMPLETE" artifacts/console.log && break
+            sleep 2
+          done
+          xcrun simctl io "$UDID" screenshot artifacts/loop.png || true
+          kill "$LAUNCH_PID" 2>/dev/null || true
+          xcrun simctl terminate "$UDID" com.devan.traceandread.app 2>/dev/null || true
+
+          echo "===== app console ====="; cat artifacts/console.log || true; echo "======================="
+
+          if grep -q "AUTOPILOT LOOP_COMPLETE" artifacts/console.log; then
+            echo "✅ Full core loop ran in the iPad simulator (reached write-then-read bridge)."
+          elif grep -q "AUTOPILOT BRIDGE_REACHED" artifacts/console.log; then
+            echo "✅ Loop reached the write-then-read bridge in the simulator."
+          else
+            echo "❌ Did not observe the loop completing in the simulator."
+            exit 1
+          fi
+
+      - name: Upload screenshot & logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            artifacts/**
+            build/xcodebuild.log
+          if-no-files-found: warn

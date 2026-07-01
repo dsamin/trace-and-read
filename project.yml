@@ -1,0 +1,78 @@
+name: TraceAndRead
+
+options:
+  bundleIdPrefix: com.devan.traceandread
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    # iPad-only.
+    TARGETED_DEVICE_FAMILY: "2"
+    # Do NOT disable code signing: simulator apps must still be ad-hoc signed
+    # (identity "-", no team required). With signing disabled the .app is
+    # unsigned and `simctl install` rejects it with a MISLEADING
+    # "does not contain a valid CFBundleVersion" error. Let the simulator SDK
+    # apply its default ad-hoc signature.
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGNING_REQUIRED: "NO"
+
+targets:
+  TraceAndRead:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: App
+      - path: Shared
+      - path: Chassis
+      - path: Features
+      # NOTE: a `type: folder` Resources reference was removed — it placed a
+      # literal Resources/ directory in the iOS app bundle (a macOS-style deep
+      # layout), which made simctl/IXInstaller fail to read the bundle ID
+      # ("Missing bundle ID"). Real audio clips, when recorded, should be added
+      # as normal bundle resources instead.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.devan.traceandread.app
+        # Let Xcode synthesize Info.plist from build settings (the standard
+        # path). A custom INFOPLIST_FILE broke the bundle-id -> code-signature
+        # flow: the app got ad-hoc signed with a fallback identifier
+        # (TraceAndRead-<uuid>) instead of the bundle id, so installd reported
+        # "Missing bundle ID". GENERATE_INFOPLIST_FILE keeps PRODUCT_BUNDLE_
+        # IDENTIFIER coherent across the plist and the signature.
+        GENERATE_INFOPLIST_FILE: "YES"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        # Calm full-screen, landscape-locked, iPad-only (synthesized into plist).
+        INFOPLIST_KEY_UIRequiresFullScreen: "YES"
+        INFOPLIST_KEY_UIStatusBarHidden: "YES"
+        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations__ipad: "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: "YES"
+
+  TraceAndReadTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Tests
+    dependencies:
+      - target: TraceAndRead
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: "YES"
+        PRODUCT_BUNDLE_IDENTIFIER: com.devan.traceandread.tests
+
+schemes:
+  TraceAndRead:
+    build:
+      targets:
+        TraceAndRead: all
+        TraceAndReadTests: [test]
+    test:
+      targets:
+        - TraceAndReadTests

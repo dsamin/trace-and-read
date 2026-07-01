@@ -1,0 +1,1 @@
+../../../Chassis/ContentLibrary/StrokeGeometry.swift
